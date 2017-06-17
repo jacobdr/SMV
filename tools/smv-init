@@ -1,4 +1,30 @@
 #!/bin/bash
+<<<<<<< HEAD
+=======
+# Store the help message in a variable
+read -r -d '' HELP_MESSAGE <<EOF
+USAGE: $0 [-q] [-s|-e|-t] project_name
+project types:
+  -s: simple (default)
+  -e: enterprise
+  -t: test (for developers only)
+example:
+  \$ $0 MyProject
+EOF
+
+# No command line options, or more than our currently allowed
+# maximum optins of 2 (project flag + directory)
+if [ ${#} -lt 1 ] || [ ${#} -gt 2 ]; then
+    echo "ERROR: Invalid number of arguments"
+    echo "${HELP_MESSAGE}"
+    exit 1
+fi
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    echo "${HELP_MESSAGE}"
+    exit 0
+fi
+>>>>>>> Force user to provide a project name
 
 QUITE_MODE=0
 if [ "$1" = "-q" ]; then
@@ -35,19 +61,15 @@ if [ "$1" = "-b" ] || [ "$1" = "-big" ]; then
   shift
 fi
 
+# If we don't have a project name, throw an error
+if [ ${#} -ne 1 ]; then
+  echo "ERROR: Invalid number of arguments. Expected a project name"
+  echo "${HELP_MESSAGE}"
+  exit 1
+fi
+
 TEMPLATE_DIR+="/$PROJ_TYPE"
 
-if [ $# -ne 1 ]; then
-    echo "ERROR: Invalid number of arguments"
-    echo "USAGE: $0 [-q] [-s|-e|-t] project_name"
-    echo "project types:"
-    echo "  -s: simple (default)"
-    echo "  -e: enterprise"
-    echo "  -t: test (for developers only)"
-    echo "example:"
-    echo "  \$ $0 MyProject"
-    exit 1
-fi
 
 PROJ_DIR="$1"
 PROJ_CLASS=""
