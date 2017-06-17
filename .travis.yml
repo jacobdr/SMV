@@ -12,13 +12,14 @@ cache:
   directories:
     - $HOME/.ivy2/cache
     - $HOME/.sbt
+    - $HOME/.pip-cache/
 install:
   - tools/spark-install ./spark
   - export PATH="$PATH:$(pwd)/spark/bin"
   - pyenv install 2.7.10
   - pyenv install 3.5.2
   - pyenv local 3.5.2 2.7.10
-  - pip install tox
+  - pip install --cache-dir $HOME/.pip-cache tox
 script:
   - sbt ++2.10.4 assembly
   - sbt ++2.10.4 publish-local
