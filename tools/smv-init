@@ -15,7 +15,7 @@ EOF
 # No command line options, or more than our currently allowed
 # maximum optins of 2 (project flag + directory)
 if [ ${#} -lt 1 ] || [ ${#} -gt 2 ]; then
-    echo "ERROR: Invalid number of arguments"
+    echo "ERROR: Invalid number of arguments" >&2
     echo "${HELP_MESSAGE}"
     exit 1
 fi
@@ -25,12 +25,6 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
     exit 0
 fi
 >>>>>>> Force user to provide a project name
-
-QUITE_MODE=0
-if [ "$1" = "-q" ]; then
-    QUITE_MODE=1
-    shift
-fi
 
 TEMPLATE_DIR="$(cd "`dirname "$0"`"; pwd)/templates"
 TEMPLATE_DATA_DIR="$TEMPLATE_DIR/data"
@@ -61,6 +55,11 @@ if [ "$1" = "-b" ] || [ "$1" = "-big" ]; then
   shift
 fi
 
+if [ "$1" = "-q" ]; then
+    exec > /dev/null
+    shift
+fi
+
 # If we don't have a project name, throw an error
 if [ ${#} -ne 1 ]; then
   echo "ERROR: Invalid number of arguments. Expected a project name"
@@ -69,7 +68,6 @@ if [ ${#} -ne 1 ]; then
 fi
 
 TEMPLATE_DIR+="/$PROJ_TYPE"
-
 
 PROJ_DIR="$1"
 PROJ_CLASS=""
