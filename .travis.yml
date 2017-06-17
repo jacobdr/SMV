@@ -1,6 +1,17 @@
+# Enable caching
+# http://www.scala-sbt.org/0.13/docs/Travis-CI-with-sbt.html#Caching
+# https://docs.travis-ci.com/user/caching/
 sudo: required
 dist: trusty
 language: python
+before_cache:
+  # Cleanup the cached directories to avoid unnecessary cache updates
+  - find $HOME/.ivy2/cache -name "ivydata-*.properties" -print -delete
+  - find $HOME/.sbt        -name "*.lock"               -print -delete
+cache:
+  directories:
+    - $HOME/.ivy2/cache
+    - $HOME/.sbt
 install:
   - tools/spark-install ./spark
   - export PATH="$PATH:$(pwd)/spark/bin"
