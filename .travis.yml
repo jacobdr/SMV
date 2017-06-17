@@ -13,6 +13,7 @@ cache:
     - $HOME/.ivy2/cache
     - $HOME/.sbt
     - $HOME/.pip-cache/
+    - $HOME/.pyenv/cache
 install:
   - tools/spark-install ./spark
   - export PATH="$PATH:$(pwd)/spark/bin"
