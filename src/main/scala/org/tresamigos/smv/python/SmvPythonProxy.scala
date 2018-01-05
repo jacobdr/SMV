@@ -102,8 +102,13 @@ object SmvPythonHelper {
     (new ArrayList(res._1), res._2)
   }
 
-  def discoverSchema(path: String, nsamples: Int, csvattr: CsvAttributes): Unit =
-    shell.discoverSchema(path, nsamples, csvattr)
+  def smvDiscoverSchemaToFile(path: String, nsamples: Int, csvattr: CsvAttributes): Unit =
+    shell.smvDiscoverSchemaToFile(path, nsamples, csvattr)
+
+  def discoverSchemaAsSmvSchema(path: String, nsamples: Int, csvattr: CsvAttributes): SmvSchema = {
+    implicit val csvAttributes = csvattr
+    new SchemaDiscoveryHelper(SmvApp.app.sqlContext).discoverSchemaFromFile(path, nsamples)
+  }
 
   /**
    * Update the port of callback client
@@ -174,12 +179,26 @@ class SmvGroupedDataAdaptor(grouped: SmvGroupedData) {
                        baseOutput: Array[String]): DataFrame =
     grouped.smvPivotCoalesce(pivotCols.map(_.toSeq).toSeq: _*)(valueCols: _*)(baseOutput: _*)
 
+  def toDF(): DataFrame =
+    grouped.toDF
+
+  def smvRePartition(numParts: Int): SmvGroupedDataAdaptor =
+    new SmvGroupedDataAdaptor(grouped.smvRePartition(numParts))
+
   def smvFillNullWithPrevValue(orderCols: Array[Column], valueCols: Array[String]): DataFrame =
     grouped.smvFillNullWithPrevValue(orderCols: _*)(valueCols: _*)
 
+  def smvWithTimePanel(timeColName: String, start: panel.PartialTime, end: panel.PartialTime) =
+    grouped.smvWithTimePanel(timeColName, start, end)
 
   def smvTimePanelAgg(timeColName: String, start: panel.PartialTime, end: panel.PartialTime, aggCols: Array[Column]) =
     grouped.smvTimePanelAgg(timeColName, start, end)(aggCols: _*)
+
+  def smvQuantile(valueCols: Array[String], numBins: Integer, ignoreNull: Boolean) =
+    grouped.smvQuantile(valueCols.toSeq, numBins, ignoreNull)
+
+  def smvPercentRank(valueCols: Array[String], ignoreNull: Boolean) =
+    grouped.smvPercentRank(valueCols.toSeq, ignoreNull)
 }
 
 class SmvMultiJoinAdaptor(joiner: SmvMultiJoin) {
@@ -223,6 +242,9 @@ class SmvPyClient(val j_smvApp: SmvApp) {
 
   def stages: Array[String] = j_smvApp.stages.toArray
 
+  def inferDS(name: String): SmvDataSet =
+    j_smvApp.dsm.inferDS(name).head
+
   /** Used to create small dataframes for testing */
   def dfFrom(schema: String, data: String): DataFrame =
     j_smvApp.createDF(schema, data)
@@ -230,8 +252,21 @@ class SmvPyClient(val j_smvApp: SmvApp) {
   def urn2fqn(modUrn: String): String = org.tresamigos.smv.urn2fqn(modUrn)
 
   /** Runs an SmvModule written in either Python or Scala */
-  def runModule(urn: String, forceRun: Boolean, version: Option[String]): DataFrame =
-    j_smvApp.runModule(URN(urn), forceRun, version)
+  def runModule(urn: String,
+                forceRun: Boolean,
+                version: Option[String],
+                runConfig: java.util.Map[String, String]): DataFrame = {
+      var dynamicRunConfig: Map[String, String] = if (null == runConfig) Map.empty else mapAsScalaMap(runConfig).toMap
+
+      j_smvApp.runModule(URN(urn), forceRun, version, dynamicRunConfig)
+    }
+
+  def copyToHdfs(in: IAnyInputStream, dest: String): Unit =
+    SmvHDFS.writeToFile(in, dest)
+
+  /** Returns metadata for a given urn*/
+  def getMetadataJson(urn: String): String =
+    j_smvApp.getMetadataJson(URN(urn))
 
   // TODO: The following method should be removed when Scala side can
   // handle publish-hive SmvOutput tables

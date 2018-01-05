@@ -19,22 +19,21 @@ import os
 import sys
 import traceback
 
+<<<<<<< HEAD
 from py4j.java_gateway import java_import, JavaObject, CallbackServerParameters
 
+=======
+from py4j.java_gateway import java_import, JavaObject
+>>>>>>> master
 from pyspark import SparkContext
 from pyspark.sql import HiveContext, DataFrame
-from utils import smv_copy_array, check_socket
-from error import SmvRuntimeError
 
-from datasetrepo import DataSetRepoFactory
 
-if sys.version >= '3':
-    basestring = unicode = str
-    long = int
-    from io import StringIO
-    from importlib import reload
-else:
-    from cStringIO import StringIO
+from smv.datasetrepo import DataSetRepoFactory
+from smv.utils import smv_copy_array, check_socket
+from smv.error import SmvRuntimeError
+import smv.helpers
+from smv.utils import FileObjInputStream
 
 class SmvApp(object):
     """The Python representation of SMV.
@@ -64,6 +63,12 @@ class SmvApp(object):
         """
         cls._instance = cls(arglist, _sc, _sqlContext)
         return cls._instance
+
+    @classmethod
+    def setInstance(cls, app):
+        """Set the singleton instance.
+        """
+        cls._instance = app
 
     def __init__(self, arglist, _sc = None, _sqlContext = None):
         sc = SparkContext() if _sc is None else _sc
@@ -122,14 +127,35 @@ class SmvApp(object):
             # update the port of CallbackClient with real port
             gw.jvm.SmvPythonHelper.updatePythonGatewayPort(jgws, gw._python_proxy_port)
 
-        self.j_smvPyClient.registerRepoFactory('Python', DataSetRepoFactory(self))
+        self.repoFactory = DataSetRepoFactory(self)
+        self.j_smvPyClient.registerRepoFactory('Python', self.repoFactory)
 
-        # Suppress creation of .pyc files. These cause complications with
-        # reloading code and have led to discovering deleted modules (#612)
-        sys.dont_write_bytecode = True
+        # Initialize DataFrame and Column with helper methods
+        smv.helpers.init_helpers()
 
     def appName(self):
         return self.j_smvApp.smvConfig().appName()
+
+    def config(self):
+        return self.j_smvApp.smvConfig()
+
+    def appId(self):
+        return self.config().appId()
+
+    def discoverSchemaAsSmvSchema(self, path, csvAttributes, n=100000):
+        """Discovers the schema of a .csv file and returns a Scala SmvSchema instance
+
+        path --- path to csvfile
+        n --- number of records used to discover schema (optional)
+        csvAttributes --- Scala CsvAttributes instance (optional)
+        """
+        return self._jvm.SmvPythonHelper.discoverSchemaAsSmvSchema(path, n, csvAttributes)
+
+    def inputDir(self):
+        return self.config().inputDir()
+
+    def getFileNamesByType(self, ftype):
+        return self.j_smvApp.getFileNamesByType(self.inputDir(), ftype)
 
     def create_smv_pyclient(self, arglist):
         '''
@@ -145,18 +171,54 @@ class SmvApp(object):
         """
         return self.j_smvApp.generateAllGraphJSON()
 
-    def runModule(self, urn, forceRun = False, version = None):
+    def getModuleResult(self, urn, forceRun = False, version = None):
+        """Run module and get its result, which may not be a DataFrame
+        """
+        fqn = urn[urn.find(":")+1:]
+        ds = self.repoFactory.createRepo().loadDataSet(fqn)
+        df = self.runModule(urn, forceRun, version)
+        return ds.df2result(df)
+
+    def runModule(self, urn, forceRun = False, version = None, runConfig = None):
         """Runs either a Scala or a Python SmvModule by its Fully Qualified Name(fqn)
         """
-        jdf = self.j_smvPyClient.runModule(urn, forceRun, self.scalaOption(version))
+        jdf = self.j_smvPyClient.runModule(urn, forceRun, self.scalaOption(version), runConfig)
         return DataFrame(jdf, self.sqlContext)
+
+    def getMetadataJson(self, urn):
+        """Returns the metadata for a given urn"""
+        return self.j_smvPyClient.getMetadataJson(urn)
+
+    def inferUrn(self, name):
+        return self.j_smvPyClient.inferDS(name).urn().toString()
 
     def runModuleByName(self, name, forceRun = False, version = None):
         jdf = self.j_smvApp.runModuleByName(name, forceRun, self.scalaOption(version))
         return DataFrame(jdf, self.sqlContext)
 
+    def getDsHash(self, name):
+        """Get hashOfHash for named module as a hex string
+        """
+        return self.j_smvPyClient.inferDS(name).verHex()
+
+    def copyToHdfs(self, fileobj, destination):
+        """Copies the content of a file object to an HDFS location.
+
+        Args:
+            fileobj (file object): a file-like object whose content is to be copied,
+                such as one returned by open(), or StringIO
+            destination (str): specifies the destination path in the hadoop file system
+
+        The file object is expected to have been opened in binary read mode.
+
+        The file object is closed when this function completes.
+        """
+        src = FileObjInputStream(fileobj)
+        self.j_smvPyClient.copyToHdfs(src, destination)
+
     def urn2fqn(self, urnOrFqn):
-        """Extracts the SMV module FQN portion from its URN; if it's already an FQN return it unchanged"""
+        """Extracts the SMV module FQN portion from its URN; if it's already an FQN return it unchanged
+        """
         return self.j_smvPyClient.urn2fqn(urnOrFqn)
 
     def getStageFromModuleFqn(self, fqn):

@@ -21,6 +21,8 @@ import org.apache.spark.{SparkContext, SparkConf}
 
 import scala.collection.mutable
 import scala.util.{Try, Success, Failure}
+import java.util.List
+import collection.JavaConverters._
 
 import org.joda.time.DateTime
 
@@ -77,12 +79,25 @@ class SmvApp(private val cmdLineArgs: Seq[String],
 
   /** list of all current valid output files in the output directory. All other files in output dir can be purged. */
   private[smv] def validFilesInOutputDir(): Seq[String] =
-    allDataSets.flatMap(_.currentModuleOutputFiles).map(SmvHDFS.baseName(_))
+    allDataSets.flatMap(_.allOutputFiles).map(SmvHDFS.baseName(_))
+
+  /**
+   * list of all the files with specific suffix in the given directory
+   **/
+  def getFileNamesByType(dirName: String, suffix: String): List[String] =
+    SmvHDFS.dirList(dirName).filter(f => f.endsWith(suffix)).asJava
 
   /** remove all non-current files in the output directory */
   private[smv] def purgeOldOutputFiles() = {
-    if (smvConfig.cmdLine.purgeOldOutput())
-      SmvHDFS.purgeDirectory(smvConfig.outputDir, validFilesInOutputDir())
+    if (smvConfig.cmdLine.purgeOldOutput()) {
+      SmvHDFS.purgeDirectory(smvConfig.outputDir, validFilesInOutputDir()) foreach {
+        case (fn, success) =>
+          println(
+            if (success) s"... Deleted ${fn}"
+            else s"... Unabled to delete ${fn}"
+          )
+      }
+    }
   }
 
   /**
@@ -117,7 +132,19 @@ class SmvApp(private val cmdLineArgs: Seq[String],
    */
 
   private[smv] def deletePersistedResults(dsList: Seq[SmvDataSet]) =
-    dsList foreach (_.deleteOutputs)
+    dsList foreach (ds => ds.deleteOutputs(ds.versionedOutputFiles))
+
+  def printDeadModules = {
+    if(smvConfig.cmdLine.printDeadModules()) {
+      val gu = new graph.SmvGraphUtil(this)
+      println("Dead modules by stage:")
+      println(gu.createDeadDSList())
+      println()
+      true
+    } else {
+      false
+    }
+  }
 
   /** Returns the app-level dependency graph as a dot string */
   def dependencyGraphDotString(stageNames: Seq[String] = stages): String =
@@ -235,18 +262,18 @@ class SmvApp(private val cmdLineArgs: Seq[String],
   }
 
   /**
-   * if the publish-local option is specified, then publish locally
+   * if the export-csv option is specified, then publish locally
    */
   def publishOutputModulesLocally: Boolean = {
-    if (smvConfig.cmdLine.publishLocal.isSupplied) {
-      val localDir = smvConfig.cmdLine.publishLocal()
+    if (smvConfig.cmdLine.exportCsv.isSupplied) {
+      val localDir = smvConfig.cmdLine.exportCsv()
       modulesToRun foreach { m =>
         val csvPath = s"${localDir}/${m.versionedFqn}.csv"
-        m.exportToCsv(csvPath)
+        m.rdd().smvExportCsv(csvPath)
       }
     }
 
-    smvConfig.cmdLine.publishLocal.isSupplied
+    smvConfig.cmdLine.exportCsv.isSupplied
   }
 
   /**
@@ -286,15 +313,30 @@ class SmvApp(private val cmdLineArgs: Seq[String],
   }
 
   /**
-   * proceeds with the execution of an smvDS passed from runModule or runModuleByName
+   * set dynamic runtime configuration.
+   * this should be set before run dataset.
    */
-  def runDS(ds: SmvDataSet, forceRun: Boolean, version: Option[String]): DataFrame = {
+  private def setDynamicRunConfig(runConfig: Map[String, String]) = {
+    smvConfig.dynamicRunConfig = runConfig
+  }
+
+  /**
+   * proceeds with the execution of an smvDS passed from runModule or runModuleByName
+   * TODO: the name of this function should make its distinction from runModule clear (this is an implementation)
+   */
+  def runDS(ds: SmvDataSet,
+            forceRun: Boolean,
+            version: Option[String],
+            runConfig: Map[String, String] = Map.empty): DataFrame = {
     if (version.isDefined)
       // if fails, error already handled since input path doesn't exist
       ds.readPublishedData(version).get
     else {
       if (forceRun)
         deletePersistedResults(Seq(ds))
+
+      // set dynamic runtime configuration before run
+      setDynamicRunConfig(runConfig)
 
       ds.rdd(forceRun)
     }
@@ -303,11 +345,15 @@ class SmvApp(private val cmdLineArgs: Seq[String],
   /** Run a module by its fully qualified name in its respective language environment
    *  If force argument is true, any existing persisted results will be deleted
    *  and the module's DataFrame cache will be ignored, forcing the module to run again.
-   * If a version is specified, try to read the module from the published data for the given version
+   *  If a version is specified, try to read the module from the published data for the given version.
+   *  If dynamic runtime configuration is specified, run the module with the configuration provided.
    */
-  def runModule(urn: URN, forceRun: Boolean = false, version: Option[String] = None): DataFrame = {
+  def runModule(urn: URN,
+                forceRun: Boolean = false,
+                version: Option[String] = None,
+                runConfig: Map[String, String] = Map.empty): DataFrame = {
     val ds = dsm.load(urn).head
-    runDS(ds, forceRun, version)
+    runDS(ds, forceRun, version, runConfig)
   }
 
   /**
@@ -319,6 +365,15 @@ class SmvApp(private val cmdLineArgs: Seq[String],
   def runModuleByName(modName: String, forceRun: Boolean = false, version: Option[String] = None): DataFrame = {
     val ds = dsm.inferDS(modName).head
     runDS(ds, forceRun, version)
+  }
+
+
+  /**
+   * Returns metadata for a given urn
+   */
+  def getMetadataJson(urn: URN): String = {
+    val ds = dsm.load(urn).head
+    ds.getMetadata().toJson
   }
 
   /**
@@ -361,7 +416,7 @@ class SmvApp(private val cmdLineArgs: Seq[String],
     }
 
     // either generate graphs, publish modules, or run output modules (only one will occur)
-    dryRun() || compareEddResults() ||
+    printDeadModules || dryRun() || compareEddResults() ||
       generateDotDependencyGraph() || generateJsonDependencyGraph() ||
       publishModulesToHive() ||  publishOutputModules() ||
       publishOutputModulesThroughJDBC() || publishOutputModulesLocally ||
