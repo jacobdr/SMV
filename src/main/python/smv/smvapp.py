@@ -76,8 +76,6 @@ class SmvApp(object):
                     enableHiveSupport().\
                     getOrCreate() if _sparkSession is None else _sparkSession
 
-        self.prepend_source("src/main/python")
-
         sc = self.sparkSession.sparkContext
         sc.setLogLevel("ERROR")
 

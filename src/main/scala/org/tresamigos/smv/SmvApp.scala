@@ -34,6 +34,7 @@ import org.joda.time.DateTime
  * launched using the SmvApp object (defined below)
  */
 class SmvApp(private val cmdLineArgs: Seq[String], _spark: Option[SparkSession] = None) {
+  val log         = LogManager.getLogger("smv")
   val smvConfig   = new SmvConfig(cmdLineArgs)
   val genEdd      = smvConfig.cmdLine.genEdd()
   val publishHive = smvConfig.cmdLine.publishHive()
