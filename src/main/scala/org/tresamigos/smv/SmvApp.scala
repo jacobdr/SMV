@@ -14,6 +14,8 @@
 
 package org.tresamigos.smv
 
+import org.apache.log4j.LogManager
+
 import org.tresamigos.smv.util.Edd
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -36,7 +38,8 @@ class SmvApp(private val cmdLineArgs: Seq[String], _spark: Option[SparkSession] 
   val genEdd      = smvConfig.cmdLine.genEdd()
   val publishHive = smvConfig.cmdLine.publishHive()
   val publishJDBC = smvConfig.cmdLine.publishJDBC()
-  val stages      = smvConfig.stageNames
+
+  def stages      = smvConfig.stageNames
   val sparkConf   = new SparkConf().setAppName(smvConfig.appName)
 
   /** Register Kryo Classes
@@ -328,10 +331,9 @@ class SmvApp(private val cmdLineArgs: Seq[String], _spark: Option[SparkSession] 
    * proceeds with the execution of an smvDS passed from runModule or runModuleByName
    * TODO: the name of this function should make its distinction from runModule clear (this is an implementation)
    */
-  def runDS(ds: SmvDataSet,
+  private def runDS(ds: SmvDataSet,
             forceRun: Boolean,
             version: Option[String],
-            runConfig: Map[String, String] = Map.empty,
             collector: SmvRunInfoCollector): DataFrame = {
     if (version.isDefined)
       // if fails, error already handled since input path doesn't exist
@@ -339,10 +341,6 @@ class SmvApp(private val cmdLineArgs: Seq[String], _spark: Option[SparkSession] 
     else {
       if (forceRun)
         deletePersistedResults(Seq(ds))
-
-      // set dynamic runtime configuration before run
-      setDynamicRunConfig(runConfig)
-
       ds.rdd(forceRun, collector=collector)
     }
   }
@@ -358,8 +356,10 @@ class SmvApp(private val cmdLineArgs: Seq[String], _spark: Option[SparkSession] 
                 version: Option[String] = None,
                 runConfig: Map[String, String] = Map.empty,
                 collector: SmvRunInfoCollector = new SmvRunInfoCollector): DataFrame = {
+    // set dynamic runtime configuration before discovering ds as stage, etc impacts what can be discovered
+    setDynamicRunConfig(runConfig)
     val ds = dsm.load(urn).head
-    runDS(ds, forceRun, version, runConfig, collector)
+    runDS(ds, forceRun, version, collector)
   }
 
   /**
@@ -373,15 +373,34 @@ class SmvApp(private val cmdLineArgs: Seq[String], _spark: Option[SparkSession] 
                       version: Option[String] = None,
                       runConfig: Map[String, String] = Map.empty,
                       collector: SmvRunInfoCollector = new SmvRunInfoCollector): DataFrame = {
+    // set dynamic runtime configuration before discovering ds as stage, etc impacts what can be discovered
+    setDynamicRunConfig(runConfig)
     val ds = dsm.inferDS(modName).head
-    runDS(ds, forceRun, version, runConfig, collector=collector)
+
+    runDS(ds, forceRun, version, collector=collector)
   }
 
-  def getRunInfo(partialName: String): SmvRunInfoCollector =
-    getRunInfo(dsm.inferDS(partialName).head)
+  def publishModuleToHiveByName(modName: String,
+                                runConfig: Map[String, String],
+                                collector: SmvRunInfoCollector): Unit = {
+      setDynamicRunConfig(runConfig)
+      dsm.inferDS(modName).head.exportToHive(collector)
+  }
 
-  def getRunInfo(urn: URN): SmvRunInfoCollector =
+  def getDsHash(name: String, runConfig: Map[String, String]): String = {
+    setDynamicRunConfig(runConfig)
+    dsm.inferDS(name).head.verHex
+  }
+
+  def getRunInfo(partialName: String, runConfig: Map[String, String]): SmvRunInfoCollector = {
+    setDynamicRunConfig(runConfig)
+    getRunInfo(dsm.inferDS(partialName).head)
+  }
+
+  def getRunInfo(urn: URN, runConfig: Map[String, String]): SmvRunInfoCollector = {
+    setDynamicRunConfig(runConfig)
     getRunInfo(dsm.load(urn).head)
+  }
 
   /**
    * Returns the run information for a given dataset and all its
