@@ -16,6 +16,7 @@ package org.apache.spark.sql.hive.test
 import org.apache.spark.SparkConf
 import org.apache.spark.SparkContext
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.util.{Utils}
 
 /**
  * Provides an entry to TestHiveContext
@@ -30,6 +31,8 @@ object SmvTestHive {
   def createContext(_sc: SparkContext): TestHiveContext = {
     if(_hc == null) {
       val sc = if (_sc == null) {
+        val hiveWarehouseLocation = Utils.createTempDir()
+
         new SparkContext(
           System.getProperty("spark.sql.test.master", "local[1]"),
           "TestSQLContext",
@@ -37,7 +40,7 @@ object SmvTestHive {
             .set("spark.sql.test", "")
             .set("spark.sql.hive.metastore.barrierPrefixes",
                  "org.apache.spark.sql.hive.execution.PairSerDe")
-            .set("spark.sql.warehouse.dir", TestHiveContext.makeWarehouseDir().toURI.getPath)
+            .set("spark.sql.warehouse.dir", hiveWarehouseLocation.toString)
             // SPARK-8910
             .set("spark.ui.enabled", "false")
         )

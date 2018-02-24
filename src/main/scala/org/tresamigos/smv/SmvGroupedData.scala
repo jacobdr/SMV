@@ -14,7 +14,7 @@
 
 package org.tresamigos.smv
 
-import org.apache.spark.sql.contrib.smv.{convertToCatalyst, convertToScala}
+import org.apache.spark.sql.contrib.smv.{convertToCatalyst, convertToScala, isAggregateExpression}
 
 import org.apache.spark.sql._
 import org.apache.spark.sql.expressions.{Window, WindowSpec}
@@ -614,9 +614,9 @@ class SmvGroupedDataFunc(smvGD: SmvGroupedData) {
       val w = winspec.orderBy(orders: _*).rowsBetween(Long.MinValue, 0)
       val cols = aggCols.map { aggCol =>
         aggCol.toExpr match {
-          case Alias(e: AggregateExpression, n) => new Column(e) over w as n
-          case e: AggregateExpression           => new Column(e) over w
-          case e                                => new Column(e)
+          case Alias(e: Expression, n) if isAggregateExpression(e) => new Column(e) over w as n
+          case e: Expression if isAggregateExpression(e)           => new Column(e) over w
+          case e                                                   => new Column(e)
         }
       }
       df.select(cols: _*)
