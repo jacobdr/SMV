@@ -8,7 +8,7 @@ scalaVersion := "2.11.8"
 
 scalacOptions ++= Seq("-deprecation", "-feature")
 
-val sparkVersion = "2.0.0"
+val sparkVersion = "2.0.2"
 javacOptions ++= Seq("-source", "1.6", "-target", "1.6")
 
 libraryDependencies ++= Seq(
