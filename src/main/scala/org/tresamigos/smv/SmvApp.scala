@@ -41,7 +41,11 @@ class SmvApp(private val cmdLineArgs: Seq[String], _spark: Option[SparkSession] 
   val publishJDBC = smvConfig.cmdLine.publishJDBC()
 
   def stages      = smvConfig.stageNames
-  val sparkConf   = new SparkConf().setAppName(smvConfig.appName)
+  val sparkConf   = (new SparkConf()
+    .setAppName(smvConfig.appName)
+    // Spark 2.0 does not yet have the .crossJoin method, so need to enable it to overcome exception
+    // https://stackoverflow.com/questions/38999140/spark-sql-crossjoin-enabled-for-spark-2-x
+    .set("spark.sql.crossJoin.enabled", "true"))
 
   /** Register Kryo Classes
    * Since none of the SMV classes will be put in an RDD, register them or not does not make
@@ -52,7 +56,7 @@ class SmvApp(private val cmdLineArgs: Seq[String], _spark: Option[SparkSession] 
    **/
   val sparkSession = _spark getOrElse (SparkSession
     .builder()
-    .appName(smvConfig.appName)
+    .config(sparkConf)
     .enableHiveSupport()
     .getOrCreate())
 

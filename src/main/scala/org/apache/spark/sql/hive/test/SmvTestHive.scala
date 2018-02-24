@@ -43,6 +43,9 @@ object SmvTestHive {
             .set("spark.sql.warehouse.dir", hiveWarehouseLocation.toString)
             // SPARK-8910
             .set("spark.ui.enabled", "false")
+            // Need to explictly allow cross join in Spark 2.0
+            // https://stackoverflow.com/questions/38999140/spark-sql-crossjoin-enabled-for-spark-2-x
+            .set("spark.sql.crossJoin.enabled", "true")
         )
       } else {
         _sc
