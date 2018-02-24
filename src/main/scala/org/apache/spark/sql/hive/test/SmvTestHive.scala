@@ -27,11 +27,12 @@ import org.apache.spark.util.{Utils}
 object SmvTestHive {
   //Each run should only have one HiveContext, and therefore one SparkSession
   private[this] var _hc: TestHiveContext = null
+  val hiveWarehouseLocation = Utils.createTempDir()
 
   def createContext(_sc: SparkContext): TestHiveContext = {
     if(_hc == null) {
       val sc = if (_sc == null) {
-        val hiveWarehouseLocation = Utils.createTempDir()
+
 
         new SparkContext(
           System.getProperty("spark.sql.test.master", "local[1]"),
@@ -58,6 +59,7 @@ object SmvTestHive {
   }
 
   def destroyContext(): Unit = {
+    Utils.deleteRecursively(hiveWarehouseLocation)
     _hc.reset()
     _hc.sparkSession.stop()
     _hc = null
